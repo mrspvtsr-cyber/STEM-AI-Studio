@@ -5,7 +5,7 @@ on:
   workflow_dispatch:
   push:
     paths:
-      - 'STEM_AI_Studio_Phase1.zip'
+      - 'STEM_AI_Studio_Phase2.zip'
       - '.github/workflows/android-build.yml'
 
 permissions:
@@ -14,15 +14,24 @@ permissions:
 jobs:
   build:
     runs-on: ubuntu-latest
+    timeout-minutes: 45
 
     steps:
       - name: Checkout Repository
         uses: actions/checkout@v4
 
-      - name: Extract Project
+      - name: Extract Phase 2 Project
         run: |
-          unzip -q STEM_AI_Studio_Phase1.zip -d .
-          ls -la STEM_AI_Studio
+          unzip -q STEM_AI_Studio_Phase2.zip -d .
+          test -f STEM_AI_Studio/app/build.gradle.kts
+
+      - name: Download HT-Demucs 6S Model
+        run: |
+          mkdir -p STEM_AI_Studio/app/src/main/assets
+          curl --fail --location --retry 3 \
+            'https://huggingface.co/StemSplitio/htdemucs-6s-onnx/resolve/main/htdemucs_6s_fp16weights.onnx' \
+            -o STEM_AI_Studio/app/src/main/assets/htdemucs_6s_fp16weights.onnx
+          test "$(stat -c%s STEM_AI_Studio/app/src/main/assets/htdemucs_6s_fp16weights.onnx)" -gt 100000000
 
       - name: Setup Java 17
         uses: actions/setup-java@v4
@@ -30,7 +39,7 @@ jobs:
           distribution: temurin
           java-version: '17'
 
-      - name: Setup Gradle 8.9
+      - name: Setup Gradle
         uses: gradle/actions/setup-gradle@v4
         with:
           gradle-version: '8.9'
@@ -41,10 +50,10 @@ jobs:
           echo "ANDROID_SDK_ROOT=$ANDROID_HOME" >> $GITHUB_ENV
           yes | "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --licenses || true
           "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" \
-            "platforms;android-35" \
-            "build-tools;35.0.0"
+            'platforms;android-35' \
+            'build-tools;35.0.0'
 
-      - name: Build Debug APK
+      - name: Build APK
         run: |
           gradle --no-daemon \
             -p STEM_AI_Studio \
@@ -53,9 +62,7 @@ jobs:
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
-          name: STEM-AI-Studio-APK
+          name: STEM-AI-Studio-Phase2-APK
           path: STEM_AI_Studio/app/build/outputs/apk/debug/app-debug.apk
           if-no-files-found: error
           retention-days: 14
-
-
