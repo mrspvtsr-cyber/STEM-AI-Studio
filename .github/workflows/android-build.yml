@@ -69,11 +69,30 @@ jobs:
             'platforms;android-35' \
             'build-tools;35.0.0'
 
+      
       - name: Build APK
         run: |
-          gradle --no-daemon \
-            -p STEM_AI_Studio \
-            assembleDebug
+          echo "Searching Android Gradle project..."
+
+          PROJECT_FILE=$(find . -type f \( \
+            -name "settings.gradle" -o \
+            -name "settings.gradle.kts" \
+          \) -print -quit)
+
+          if [ -z "$PROJECT_FILE" ]; then
+            echo "ERROR: Gradle settings file not found!"
+            find . -maxdepth 5 -type f | head -100
+            exit 1
+          fi
+
+          PROJECT_DIR=$(dirname "$PROJECT_FILE")
+
+          echo "Project root: $PROJECT_DIR"
+
+          cd "$PROJECT_DIR"
+
+          gradle --no-daemon assembleDebug
+          
 
       - name: Upload APK
         uses: actions/upload-artifact@v4
