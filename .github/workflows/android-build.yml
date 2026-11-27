@@ -20,10 +20,26 @@ jobs:
       - name: Checkout Repository
         uses: actions/checkout@v4
 
+      
       - name: Extract Phase 2 Project
         run: |
-          unzip -q STEM_AI_Studio_Phase2.zip -d .
-          test -f STEM_AI_Studio/app/build.gradle.kts
+          set -e
+
+          ZIP="STEM_AI_Studio_Phase2.zip"
+
+          echo "=== CHECK ZIP FILE ==="
+          ls -lh "$ZIP"
+          file "$ZIP" || true
+
+          echo "=== VALIDATE ZIP ==="
+          unzip -t "$ZIP"
+
+          echo "=== EXTRACT PROJECT ==="
+          unzip -o "$ZIP" -d .
+
+          echo "=== PROJECT FILES ==="
+          find . -maxdepth 3 -type f | head -80
+
 
       - name: Download HT-Demucs 6S Model
         run: |
