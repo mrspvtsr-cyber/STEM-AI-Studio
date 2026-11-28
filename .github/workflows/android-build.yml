@@ -116,6 +116,32 @@ jobs:
           gradle --no-daemon assembleDebug
           
    
+      
+      - name: Verify ONNX Model Inside APK
+        shell: bash
+        run: |
+          set -e
+
+          APK=$(find . -type f \
+            -path '*/build/outputs/apk/debug/*.apk' \
+            | head -n 1)
+
+          if [ -z "$APK" ]; then
+            echo "ERROR: APK not found"
+            exit 1
+          fi
+
+          echo "Checking APK: $APK"
+
+          if unzip -l "$APK" | grep -F \
+            "assets/htdemucs_6s_fp16weights.onnx"; then
+            echo "SUCCESS: ONNX model packaged inside APK"
+          else
+            echo "ERROR: ONNX model missing from APK"
+            exit 1
+          fi
+          
+      
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
