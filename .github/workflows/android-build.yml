@@ -49,6 +49,28 @@ jobs:
             -o STEM_AI_Studio/app/src/main/assets/htdemucs_6s_fp16weights.onnx
           test "$(stat -c%s STEM_AI_Studio/app/src/main/assets/htdemucs_6s_fp16weights.onnx)" -gt 100000000
 
+    
+      - name: Prepare ONNX Model
+        shell: bash
+        run: |
+          MODEL="STEM_AI_Studio/app/src/main/assets/htdemucs_6s_fp16weights.onnx"
+
+          echo "Checking ONNX model..."
+
+          if [ ! -s "$MODEL" ]; then
+            echo "ERROR: Model missing or empty!"
+            find . -name "*.onnx" -type f
+            exit 1
+          fi
+
+          echo "Model found:"
+          ls -lh "$MODEL"
+
+          echo "Model size:"
+          du -h "$MODEL"
+          
+      
+      
       - name: Setup Java 17
         uses: actions/setup-java@v4
         with:
@@ -102,19 +124,6 @@ jobs:
             **/*.apk
           if-no-files-found: error
           retention-days: 7
-
-          
-      - name: Prepare ONNX Model
-        shell: bash
-        run: |
-          mkdir -p app/src/main/assets
-
-          if [ ! -f app/src/main/assets/htdemucs_6s_fp16weights.onnx ]; then
-            echo "ERROR: ONNX model not found"
-            exit 1
-          fi
-
-          ls -lh app/src/main/assets/
           
           
 
