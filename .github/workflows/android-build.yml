@@ -93,9 +93,7 @@ jobs:
 
           gradle --no-daemon assembleDebug
           
-
-      
-      
+   
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
@@ -104,5 +102,19 @@ jobs:
             **/*.apk
           if-no-files-found: error
           retention-days: 7
+
+          
+      - name: Prepare ONNX Model
+        shell: bash
+        run: |
+          mkdir -p app/src/main/assets
+
+          if [ ! -f app/src/main/assets/htdemucs_6s_fp16weights.onnx ]; then
+            echo "ERROR: ONNX model not found"
+            exit 1
+          fi
+
+          ls -lh app/src/main/assets/
+          
           
 
