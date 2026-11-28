@@ -1,4 +1,3 @@
-
 name: STEM AI Studio APK Build
 
 on:
@@ -14,165 +13,191 @@ permissions:
 jobs:
   build:
     runs-on: ubuntu-latest
-    timeout-minutes: 45
+    timeout-minutes: 60
 
     steps:
       - name: Checkout Repository
         uses: actions/checkout@v4
 
-      
+      # 1. Extract project
       - name: Extract Phase 2 Project
+        shell: bash
         run: |
           set -e
 
           ZIP="STEM_AI_Studio_Phase2.zip"
 
-          echo "=== CHECK ZIP FILE ==="
-          ls -lh "$ZIP"
-          file "$ZIP" || true
-
-          echo "=== VALIDATE ZIP ==="
+          test -f "$ZIP"
           unzip -t "$ZIP"
-
-          echo "=== EXTRACT PROJECT ==="
           unzip -o "$ZIP" -d .
 
-          echo "=== PROJECT FILES ==="
-          find . -maxdepth 3 -type f | head -80
+          echo "=== EXTRACTED FILES ==="
+          find . -maxdepth 4 -type f | head -100
 
-
-      - name: Download HT-Demucs 6S Model
-        run: |
-          mkdir -p STEM_AI_Studio/app/src/main/assets
-          curl --fail --location --retry 3 \
-            'https://huggingface.co/StemSplitio/htdemucs-6s-onnx/resolve/main/htdemucs_6s_fp16weights.onnx' \
-            -o STEM_AI_Studio/app/src/main/assets/htdemucs_6s_fp16weights.onnx
-          test "$(stat -c%s STEM_AI_Studio/app/src/main/assets/htdemucs_6s_fp16weights.onnx)" -gt 100000000
-
-    
-      
-      - name: Copy ONNX Model Into Actual Android Project
+      # 2. Detect actual Android project
+      - name: Detect Android Project
         shell: bash
         run: |
           set -e
 
-          SETTINGS=$(find . -type f \
-            \( -name settings.gradle \
-            -o -name settings.gradle.kts \) \
-            -print -quit)
+          PROJECT_DIR=""
 
-          if [ -z "$SETTINGS" ]; then
-            echo "ERROR: Gradle settings not found"
+          while IFS= read -r SETTINGS; do
+            CANDIDATE="${SETTINGS%/*}"
+
+            if [[ -f "$CANDIDATE/app/build.gradle" ]] || \
+               [[ -f "$CANDIDATE/app/build.gradle.kts" ]]; then
+              PROJECT_DIR="$CANDIDATE"
+              break
+            fi
+          done < <(
+            find . -type f \
+              \( -name settings.gradle \
+              -o -name settings.gradle.kts \) | sort
+          )
+
+          if [ -z "$PROJECT_DIR" ]; then
+            echo "ERROR: Android project not found"
             exit 1
           fi
 
-          PROJECT_DIR=$(dirname "$SETTINGS")
+          PROJECT_DIR=$(realpath "$PROJECT_DIR")
 
-          MODEL=$(find . -type f \
-            -name htdemucs_6s_fp16weights.onnx \
-            -not -path '*/build/*' \
-            -print -quit)
+          echo "PROJECT_DIR=$PROJECT_DIR" >> "$GITHUB_ENV"
 
-          if [ -z "$MODEL" ]; then
-            echo "ERROR: ONNX model download missing"
-            exit 1
-          fi
+          echo "Detected project: $PROJECT_DIR"
+          ls -la "$PROJECT_DIR"
+
+      # 3. Download model directly into real project
+      - name: Download HT-Demucs 6S Model
+        shell: bash
+        run: |
+          set -e
+
+          MODEL_NAME="htdemucs_6s_fp16weights.onnx"
+          MODEL_URL="https://huggingface.co/StemSplitio/htdemucs-6s-onnx/resolve/main/htdemucs_6s_fp16weights.onnx"
 
           TARGET="$PROJECT_DIR/app/src/main/assets"
+
           mkdir -p "$TARGET"
 
-          MODEL_REAL=$(realpath "$MODEL")
-          TARGET_REAL=$(realpath -m "$TARGET/htdemucs_6s_fp16weights.onnx")
+          curl --fail --location \
+            --retry 3 \
+            --retry-all-errors \
+            "$MODEL_URL" \
+            -o "/tmp/$MODEL_NAME"
 
-          if [ "$MODEL_REAL" != "$TARGET_REAL" ]; then
-            cp "$MODEL" "$TARGET/"
+          SIZE=$(stat -c%s "/tmp/$MODEL_NAME")
+
+          echo "Model size: $SIZE bytes"
+
+          if [ "$SIZE" -lt 100000000 ]; then
+            echo "ERROR: Model file too small"
+            exit 1
           fi
 
-          echo "Project: $PROJECT_DIR"
-          ls -lh "$TARGET/htdemucs_6s_fp16weights.onnx"
-          
-          
-      
-      
+          cp "/tmp/$MODEL_NAME" "$TARGET/$MODEL_NAME"
+
+          echo "=== MODEL VERIFIED ==="
+          ls -lh "$TARGET/$MODEL_NAME"
+
+      # 4. Verify model before build
+      - name: Verify Model Before Build
+        shell: bash
+        run: |
+          set -e
+
+          MODEL="$PROJECT_DIR/app/src/main/assets/htdemucs_6s_fp16weights.onnx"
+
+          test -s "$MODEL"
+
+          echo "ONNX model exists"
+          sha256sum "$MODEL"
+
+      # 5. Setup Java
       - name: Setup Java 17
         uses: actions/setup-java@v4
         with:
           distribution: temurin
           java-version: '17'
 
+      # 6. Setup Gradle
       - name: Setup Gradle
         uses: gradle/actions/setup-gradle@v4
         with:
           gradle-version: '8.9'
 
+      # 7. Android SDK
       - name: Configure Android SDK
+        shell: bash
         run: |
-          echo "ANDROID_HOME=$ANDROID_HOME" >> $GITHUB_ENV
-          echo "ANDROID_SDK_ROOT=$ANDROID_HOME" >> $GITHUB_ENV
+          set -e
+
+          echo "ANDROID_HOME=$ANDROID_HOME" >> "$GITHUB_ENV"
+          echo "ANDROID_SDK_ROOT=$ANDROID_HOME" >> "$GITHUB_ENV"
+
           yes | "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --licenses || true
+
           "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" \
             'platforms;android-35' \
             'build-tools;35.0.0'
 
-      
+      # 8. Build APK
       - name: Build APK
+        shell: bash
         run: |
-          echo "Searching Android Gradle project..."
+          set -e
 
-          PROJECT_FILE=$(find . -type f \( \
-            -name "settings.gradle" -o \
-            -name "settings.gradle.kts" \
-          \) -print -quit)
+          echo "Building project: $PROJECT_DIR"
 
-          if [ -z "$PROJECT_FILE" ]; then
-            echo "ERROR: Gradle settings file not found!"
-            find . -maxdepth 5 -type f | head -100
-            exit 1
-          fi
+          gradle \
+            --no-daemon \
+            -p "$PROJECT_DIR" \
+            assembleDebug
 
-          PROJECT_DIR=$(dirname "$PROJECT_FILE")
-
-          echo "Project root: $PROJECT_DIR"
-
-          cd "$PROJECT_DIR"
-
-          gradle --no-daemon assembleDebug
-          
-   
-      
+      # 9. Verify ONNX inside APK
       - name: Verify ONNX Model Inside APK
         shell: bash
         run: |
           set -e
 
-          APK=$(find . -type f \
-            -path '*/build/outputs/apk/debug/*.apk' \
-            | head -n 1)
+          APK_DIR="$PROJECT_DIR/app/build/outputs/apk/debug"
+
+          APK=$(find "$APK_DIR" -type f \
+            -name '*.apk' -print -quit)
 
           if [ -z "$APK" ]; then
             echo "ERROR: APK not found"
             exit 1
           fi
 
-          echo "Checking APK: $APK"
+          echo "APK: $APK"
 
-          if unzip -l "$APK" | grep -F \
+          echo "=== CHECKING MODEL INSIDE APK ==="
+
+          if unzip -Z1 "$APK" | grep -Fx \
             "assets/htdemucs_6s_fp16weights.onnx"; then
-            echo "SUCCESS: ONNX model packaged inside APK"
+
+            echo "SUCCESS: ONNX model embedded in APK"
+
           else
             echo "ERROR: ONNX model missing from APK"
+
+            echo "=== AVAILABLE ASSETS ==="
+            unzip -Z1 "$APK" | grep 'assets/' | head -100 || true
+
             exit 1
           fi
-          
-      
+
+          echo "=== APK SIZE ==="
+          ls -lh "$APK"
+
+      # 10. Upload APK
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
           name: STEM-AI-Studio-Phase2-APK
-          path: |
-            **/*.apk
+          path: ${{ env.PROJECT_DIR }}/app/build/outputs/apk/debug/*.apk
           if-no-files-found: error
           retention-days: 7
           
-          
-
